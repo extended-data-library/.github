@@ -67,26 +67,39 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const review = JSON.parse(fs.readFileSync('review-result.json', 'utf8'));
+            let review;
+            let body;
             
-            let body = `## 🤖 AI Code Review\n\n`;
-            body += `### Summary\n${review.summary}\n\n`;
+            try {
+              const reviewOutput = fs.readFileSync('review-result.json', 'utf8');
+              review = JSON.parse(reviewOutput);
+
+              body = `## 🤖 AI Code Review\n\n`;
+              body += `### Summary\n${review.summary}\n\n`;
+
+              if (review.issues && review.issues.length > 0) {
+                body += `### Issues Found\n`;
+                review.issues.forEach(issue => {
+                  const emoji = issue.severity === 'critical' ? '🔴' :
+                               issue.severity === 'high' ? '🟠' :
+                               issue.severity === 'medium' ? '🟡' : '🟢';
+                  body += `${emoji} **${issue.severity}**: ${issue.description}\n`;
+                  if (issue.suggestion) {
+                    body += `  - 💡 ${issue.suggestion}\n`;
+                  }
+                });
+              }
+
+              body += `\n---\n<sub>Reviewed by Control Center using ${process.env.OLLAMA_MODEL}</sub>`;
             
-            if (review.issues && review.issues.length > 0) {
-              body += `### Issues Found\n`;
-              review.issues.forEach(issue => {
-                const emoji = issue.severity === 'critical' ? '🔴' : 
-                             issue.severity === 'high' ? '🟠' : 
-                             issue.severity === 'medium' ? '🟡' : '🟢';
-                body += `${emoji} **${issue.severity}**: ${issue.description}\n`;
-                if (issue.suggestion) {
-                  body += `  - 💡 ${issue.suggestion}\n`;
-                }
-              });
+            } catch (error) {
+              body = `## 🤖 AI Code Review Failed\n\n`;
+              body += `Could not parse review output. This may be due to an issue with the upstream review tool.\n\n`;
+              body += `**Error:**\n\`\`\`\n${error.message}\n\`\`\`\n`;
+              body += `\n---\n<sub>Reviewed by Control Center using ${process.env.OLLAMA_MODEL}</sub>`;
+              console.error("Failed to parse review output:", error);
             }
-            
-            body += `\n---\n<sub>Reviewed by Control Center using ${process.env.OLLAMA_MODEL}</sub>`;
-            
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
